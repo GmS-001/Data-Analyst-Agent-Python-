@@ -1,0 +1,3 @@
+Scrape the list of highest grossing films from Wikipedia.
+ok lets move on , i want to remind u i want to become a professional , along with making this project keep in mind that i use all professional means and methods in building this (like knowing all development issues which might come , making code modularized and such more similar things), anything u feel relevant in this project which is useful for me to if i was in professional setting tell me along the way(Although u are doing a great job!)
+https://github.com/sanand0/tools-in-data-science-public/pull/31

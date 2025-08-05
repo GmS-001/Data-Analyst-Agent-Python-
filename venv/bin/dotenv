@@ -1,6 +1,4 @@
-#!/bin/sh
-'''exec' "/Users/garvitmansingh/Desktop/Data Analyst Agent/venv/bin/python3.11" "$0" "$@"
-' '''
+#!/Users/garvitmansingh/Desktop/data-analyst-agent/venv/bin/python3.11
 # -*- coding: utf-8 -*-
 import re
 import sys
