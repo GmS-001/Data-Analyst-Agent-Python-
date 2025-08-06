@@ -18,23 +18,19 @@ except ValueError as e:
 # This is the core instruction set for our agent's brain.
 PLANNER_PROMPT_TEMPLATE = """
 You are an expert data analyst agent. Your goal is to create a step-by-step plan to answer a user's request.
-You have access to the following tools:
-1.  `web_scraper`: Use this to get data from a specific URL. The tool needs a "url".
-2.  `python_interpreter`: Use this to execute Python code for data analysis and manipulation (using pandas). The tool needs the "code". The data is available in a pandas DataFrame called `df`.
-3.  `plot_generator`: Use this to create plots from the data. The tool needs the "code" to generate the plot (e.g., `df.plot(...)`).
-
-Based on the user's request, create a JSON array of steps. Each step must be a JSON object with three keys: "step" (an integer), "tool" (the name of the tool to use), and "args" (a dictionary of arguments for the tool, like "url" or "code").
+You have access to these tools: `web_scraper`, `python_interpreter`.
+Create a JSON array of steps. Each step must be a JSON object with "step" (integer), "tool" (string), and "args" (object) keys.
 
 ---
 IMPORTANT RULES FOR YOUR RESPONSE:
-1. The value for any "code" argument MUST be a valid, single-line JSON string. This means all newline characters inside the code must be escaped as `\\n`, and all double quotes must be escaped as `\\"`.
-2. The value for the "code" argument MUST contain ONLY the raw Python code to be executed. DO NOT wrap it in another JSON object.
+1. The `python_interpreter`'s "code" argument MUST be a raw python string.
+2. The python code you write should ONLY manipulate a pandas DataFrame named `df`.
+3. The python code has access to two pre-loaded variables:
+   - `html_content`: A string containing the full HTML from the `web_scraper` tool.
+   - `df`: The pandas DataFrame, which is empty initially.
+4. The first python step after scraping MUST create the dataframe using the `html_content` variable, like this: `df = pd.read_html(io.StringIO(html_content))[0]`
 ---
-
-User Request:
----
-{user_request}
----
+User Request: {user_request}
 """
 
 def create_analysis_plan(user_request: str):
@@ -46,30 +42,37 @@ def create_analysis_plan(user_request: str):
     # Format the prompt with the user's actual request
     prompt = PLANNER_PROMPT_TEMPLATE.format(user_request=user_request)
 
-    print("--- Sending Planner Prompt to LLM ---")
-    print(prompt) # Good for debugging to see the final prompt
-    
+    print("--- 🧠 Generating plan with Gemini... ---")
     response = model.generate_content(prompt)
+
+    try:
+        if not response.parts:
+            print("\n--- ERROR: The response from the LLM was empty or blocked. ---")
+            print(f"Prompt Feedback: {response.prompt_feedback}")
+            return None
+    except ValueError:
+        pass
     
-    # The LLM might return the JSON inside a markdown code block, so we clean it up.
-    # "```json\n{...}\n```" -> "{...}"
-    cleaned_json_string = response.text.strip().replace("```json", "").replace("```", "").strip()
+    raw_text = response.text
+    ascii_text = raw_text.encode('ascii', 'ignore').decode('utf-8')
+
+    cleaned_json_string = ascii_text.strip().replace("```json", "").replace("```", "").strip()
     
     print("\n--- Received Plan from LLM ---")
     print(cleaned_json_string)
+    print("\n--- DEBUG: True String Representation for Parser ---")
+    print(repr(cleaned_json_string))
+    print("-------------------------------------------------\n")
 
     try:
-        # Parse the cleaned string into a Python list of dictionaries
         plan = json.loads(cleaned_json_string)
         return plan
     except json.JSONDecodeError:
-        print("\n--- ERROR: LLM did not return valid JSON. ---")
+        print(f"\n--- ERROR: JSONDecodeError: {e} ---")
         return None
 
-# Function to get a response from the Gemini model
 def get_gemini_response(prompt: str):
     """Sends a prompt to the Gemini API and returns the text response."""
-    # We are using the 'gemini-1.5-flash' model, which is fast and cost-effective.
     model = genai.GenerativeModel('gemini-1.5-flash')
     print("  -> Model initialized. Calling API now...")
     response = model.generate_content(prompt)
@@ -96,9 +99,6 @@ Corrected Python Code:
 """
 
 def get_corrected_code(user_request: str, failed_code: str, error_message: str) -> str:
-    """
-    Asks the LLM to debug a piece of failed code.
-    """
     model = genai.GenerativeModel('gemini-1.5-flash')
     
     prompt = DEBUGGER_PROMPT_TEMPLATE.format(
@@ -109,8 +109,6 @@ def get_corrected_code(user_request: str, failed_code: str, error_message: str) 
 
     print("--- 🧠 Sending code to debugger prompt ---")
     response = model.generate_content(prompt)
-    
-    # Clean up the response to get only the raw code
     corrected_code = response.text.strip().replace("```python", "").replace("```", "").strip()
     
     return corrected_code
