@@ -1,9 +1,9 @@
 import os
 import json
 from dotenv import load_dotenv
+from prompts import PLANNER_PROMPT_TEMPLATE, DEBUGGER_PROMPT_TEMPLATE
 import google.generativeai as genai
 
-# --- Configuration (same as before) ---
 load_dotenv()
 try:
     api_key = os.getenv("GOOGLE_API_KEY")
@@ -14,62 +14,37 @@ except ValueError as e:
     print(e)
     exit()
 
-# --- The new "Planner" Prompt Template ---
-# This is the core instruction set for our agent's brain.
-PLANNER_PROMPT_TEMPLATE = """
-You are an expert data analyst agent. Your goal is to create a step-by-step plan to answer a user's request.
-You have access to these tools: `web_scraper`, `python_interpreter`.
-Create a JSON array of steps. Each step must be a JSON object with "step" (integer), "tool" (string), and "args" (object) keys.
-
----
-IMPORTANT RULES FOR YOUR RESPONSE:
-1. The `python_interpreter`'s "code" argument MUST be a raw python string.
-2. The python code you write should ONLY manipulate a pandas DataFrame named `df`.
-3. The python code has access to two pre-loaded variables:
-   - `html_content`: A string containing the full HTML from the `web_scraper` tool.
-   - `df`: The pandas DataFrame, which is empty initially.
-4. The first python step after scraping MUST create the dataframe using the `html_content` variable, like this: `df = pd.read_html(io.StringIO(html_content))[0]`
----
-User Request: {user_request}
-"""
 
 def create_analysis_plan(user_request: str):
-    """
-    Takes a user's request and asks the LLM to generate a step-by-step JSON plan.
-    """
     model = genai.GenerativeModel('gemini-1.5-flash')
-    
-    # Format the prompt with the user's actual request
     prompt = PLANNER_PROMPT_TEMPLATE.format(user_request=user_request)
+    for attempt in range(3): # Try up to 3 times
+        try:
+            response = model.generate_content(prompt)
+            
+            if not response.parts:
+                print(f"\n--- ERROR: Response was empty or blocked on attempt {attempt + 1}. Feedback: {response.prompt_feedback} ---")
+                continue 
 
-    print("--- 🧠 Generating plan with Gemini... ---")
-    response = model.generate_content(prompt)
+            ascii_text = response.text.encode('ascii', 'ignore').decode('utf-8')
+            cleaned_json_string = ascii_text.strip().replace("```json", "").replace("```", "").strip()
+                    
+            # Try to parse the JSON. If it succeeds, we're done.
+            plan = json.loads(cleaned_json_string)
+            print(f"\n--- Received Plan from LLM ---\n{cleaned_json_string}")
+            return plan # Success! Exit the function.
 
-    try:
-        if not response.parts:
-            print("\n--- ERROR: The response from the LLM was empty or blocked. ---")
-            print(f"Prompt Feedback: {response.prompt_feedback}")
+        except json.JSONDecodeError as e:
+            print(f"\n--- WARNING: Attempt {attempt + 1} failed to parse JSON. Error: {e}. Retrying... ---")
+            # If we've used up all our retries, fail gracefully.
+            if attempt == 2:
+                print("\n--- ERROR: Max retries reached. Could not get a valid JSON plan. ---")
+                return None
+        except Exception as e:
+            print(f"\n--- ERROR: An unexpected error occurred during plan generation: {e} ---")
             return None
-    except ValueError:
-        pass
     
-    raw_text = response.text
-    ascii_text = raw_text.encode('ascii', 'ignore').decode('utf-8')
-
-    cleaned_json_string = ascii_text.strip().replace("```json", "").replace("```", "").strip()
-    
-    print("\n--- Received Plan from LLM ---")
-    print(cleaned_json_string)
-    print("\n--- DEBUG: True String Representation for Parser ---")
-    print(repr(cleaned_json_string))
-    print("-------------------------------------------------\n")
-
-    try:
-        plan = json.loads(cleaned_json_string)
-        return plan
-    except json.JSONDecodeError:
-        print(f"\n--- ERROR: JSONDecodeError: {e} ---")
-        return None
+    return None
 
 def get_gemini_response(prompt: str):
     """Sends a prompt to the Gemini API and returns the text response."""
@@ -79,36 +54,16 @@ def get_gemini_response(prompt: str):
     return response.text
 
 
-DEBUGGER_PROMPT_TEMPLATE = """
-You are an expert Python debugging assistant. Your task is to fix a broken piece of Python code.
-You will be given the original user request, the code that failed, and the error message that it produced.
-Your goal is to return only the corrected, raw Python code. Do not add any explanations, apologies, or markdown formatting.
-Original User Request:
----
-{user_request}
----
-Failed Code:
----
-{failed_code}
----
-Error Message:
----
-{error_message}
----
-Corrected Python Code:
-"""
 
-def get_corrected_code(user_request: str, failed_code: str, error_message: str) -> str:
+def get_corrected_code(user_request: str, full_plan: str, failed_step_number: int, failed_code: str, error_history: str) -> str:
     model = genai.GenerativeModel('gemini-1.5-flash')
-    
     prompt = DEBUGGER_PROMPT_TEMPLATE.format(
         user_request=user_request,
+        full_plan=full_plan,
+        failed_step_number=failed_step_number,
         failed_code=failed_code,
-        error_message=error_message
+        error_history=error_history
     )
-
-    print("--- 🧠 Sending code to debugger prompt ---")
+    print("--- 🧠 Sending code to smart debugger... ---")
     response = model.generate_content(prompt)
-    corrected_code = response.text.strip().replace("```python", "").replace("```", "").strip()
-    
-    return corrected_code
+    return response.text.strip().replace("```python", "").replace("```", "").strip()

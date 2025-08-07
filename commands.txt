@@ -1,0 +1,2 @@
+for docker sandbox : docker build -t data-analyst-sandbox .
+running api : uvicorn main:app --reload
