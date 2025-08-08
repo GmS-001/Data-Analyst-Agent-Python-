@@ -5,13 +5,14 @@ import ast
 import inspect
 from prompts import user_request
 from llm_handler import create_analysis_plan, get_corrected_code
-from tools import web_scraper, python_interpreter, answer_generator
+from tools import web_scraper, python_interpreter, answer_generator, data_cleaner
 
-AVAILABLE_TOOLS = {"web_scraper": web_scraper, "python_interpreter": python_interpreter, "answer_generator": answer_generator}
+AVAILABLE_TOOLS = {"web_scraper": web_scraper, "python_interpreter": python_interpreter, "answer_generator": answer_generator, "data_cleaner": data_cleaner}
 MAX_RETRIES = 3
+
 def execute_plan(user_request: str, plan: list):
     data_context = {"df": pd.DataFrame()}
-    plan_str = json.dumps(plan, indent=2) # For passing the full plan to the debugger
+    plan_str = json.dumps(plan, indent=2)
 
     for step in sorted(plan, key=lambda x: x['step']):
         tool_name = step.get('tool')
@@ -37,46 +38,66 @@ def execute_plan(user_request: str, plan: list):
                 pass
             
         tool_function = AVAILABLE_TOOLS[tool_name]
-        tool_params = inspect.signature(tool_function).parameters
-        valid_args = {name: value for name, value in args.items() if name in tool_params}
+        
+        # Prepare all possible arguments any tool might need
+        all_possible_args = {
+            "user_request": user_request,
+            "data_context": data_context,
+            **args
+        }
 
-        # The self-correction loop is used for any tool that runs code
-        if tool_name in ['python_interpreter', 'answer_generator']:
-            current_code = args.get("code")
-            error_history = ""
-            for attempt in range(MAX_RETRIES):
-                result_context = tool_function(code=current_code, data_context=data_context)
-                if result_context.get('status') == 'success':
+        # Smartly filter for only the arguments this specific tool accepts
+        tool_params = inspect.signature(tool_function).parameters
+        valid_args = {name: value for name, value in all_possible_args.items() if name in tool_params}
+
+        # --- The self-correction and execution logic ---
+        current_args = valid_args
+        error_history = ""
+        for attempt in range(MAX_RETRIES):
+            try:
+                # Call the tool with only the arguments it can accept
+                result_context = tool_function(**current_args)
+                
+                # If the tool doesn't return a status, assume success
+                if result_context.get('status', 'success') == 'success':
                     data_context.update(result_context)
                     break # Success, exit the retry loop
+                
+                # If the tool returns an error status, trigger debugger
                 else:
-                    error_message = result_context.get('error_message', 'An unknown error occurred.')
-                    error_history += f"--- ATTEMPT {attempt + 1} ---\nFAILED CODE:\n{current_code}\n\nERROR:\n{error_message}\n---\n"
-                    if attempt < MAX_RETRIES - 1: # Check if we have retries left
-                        print(f"--- 🔁 Attempt {attempt + 1} failed. Asking smart debugger for a fix... ---")
-                        current_code = get_corrected_code(user_request, plan_str, step['step'], current_code, error_history)
-                    else:
+                    error_message = result_context.get('error_message', 'Tool returned a failure status.')
+                    # This check is to prevent infinite loops if the debugger fails
+                    if attempt >= MAX_RETRIES - 1:
                         print("--- 🚫 Max retries reached. Failing step. ---")
                         data_context['error'] = f"Max retries reached. Last error: {error_message}"
-        else: # For simple tools like web_scraper
-            try:
-                result_context = tool_function(**valid_args, data_context=data_context)
-                data_context.update(result_context)
-            except Exception as e:
-                data_context['status'] = 'error'; data_context['error_message'] = f"Error calling tool '{tool_name}': {e}"
+                        break
+                    
+                    print(f"--- 🔁 Attempt {attempt + 1} failed. Asking smart debugger for a fix... ---")
+                    failed_code = current_args.get("code", "N/A")
+                    error_history += f"--- ATTEMPT {attempt + 1} ---\nFAILED CODE:\n{failed_code}\n\nERROR:\n{error_message}\n---\n"
+                    # Update the 'code' argument with the corrected code for the next attempt
+                    current_args['code'] = get_corrected_code(user_request, plan_str, step['step'], error_history)
 
-        if data_context.get('status') == 'error' or 'error' in data_context:
+            except Exception as e:
+                # This catches unexpected crashes in the tool itself
+                data_context['status'] = 'error'; data_context['error_message'] = f"Error calling tool '{tool_name}': {repr(e)}"
+                break # Exit the loop on a hard crash
+
+        if 'error' in data_context or data_context.get('status') == 'error':
             print(f"Stopping execution due to an unrecoverable error in Step {step['step']}.")
             break
             
-    print("\n--- ✅ Plan Execution Finished ---")
     return data_context
 
 
-
 if __name__ == '__main__':
-
-    print("--- Generating new plan from LLM... ---")
+    user_request = """
+    Scrape the list of highest grossing films from Wikipedia at the URL https://en.wikipedia.org/wiki/List_of_highest-grossing_films.
+    Then, create and clean the DataFrame.
+    Finally, use the `answer_generator` to print a JSON object with two keys:
+    1. "movies_over_2.5_billion": The integer number of movies that grossed over $2.5 billion.
+    2. "average_gross_2019": The average gross of movies released in 2019, as a float.
+    """
     plan = create_analysis_plan(user_request)
     if plan:
         final_context = execute_plan(user_request, plan)

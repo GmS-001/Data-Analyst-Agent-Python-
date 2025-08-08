@@ -1,7 +1,7 @@
 import os
 import json
 from dotenv import load_dotenv
-from prompts import PLANNER_PROMPT_TEMPLATE, DEBUGGER_PROMPT_TEMPLATE
+from prompts import PLANNER_PROMPT_TEMPLATE, DEBUGGER_PROMPT_TEMPLATE,CLEANER_PROMPT_TEMPLATE
 import google.generativeai as genai
 
 load_dotenv()
@@ -16,35 +16,21 @@ except ValueError as e:
 
 
 def create_analysis_plan(user_request: str):
+    """Generates a plan and retries on JSON failure."""
     model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = PLANNER_PROMPT_TEMPLATE.format(user_request=user_request)
-    for attempt in range(3): # Try up to 3 times
+    print("--- 🧠 Generating plan with Gemini... ---")
+    for attempt in range(3):
         try:
             response = model.generate_content(prompt)
-            
-            if not response.parts:
-                print(f"\n--- ERROR: Response was empty or blocked on attempt {attempt + 1}. Feedback: {response.prompt_feedback} ---")
-                continue 
-
-            ascii_text = response.text.encode('ascii', 'ignore').decode('utf-8')
-            cleaned_json_string = ascii_text.strip().replace("```json", "").replace("```", "").strip()
-                    
-            # Try to parse the JSON. If it succeeds, we're done.
+            cleaned_json_string = response.text.strip().replace("```json", "").replace("```", "").strip()
             plan = json.loads(cleaned_json_string)
             print(f"\n--- Received Plan from LLM ---\n{cleaned_json_string}")
-            return plan # Success! Exit the function.
+            return plan
+        except (json.JSONDecodeError, Exception) as e:
+            print(f"\n--- WARNING: Attempt {attempt + 1} failed to get a valid plan. Error: {e}. Retrying... ---")
+            if attempt == 2: return None
 
-        except json.JSONDecodeError as e:
-            print(f"\n--- WARNING: Attempt {attempt + 1} failed to parse JSON. Error: {e}. Retrying... ---")
-            # If we've used up all our retries, fail gracefully.
-            if attempt == 2:
-                print("\n--- ERROR: Max retries reached. Could not get a valid JSON plan. ---")
-                return None
-        except Exception as e:
-            print(f"\n--- ERROR: An unexpected error occurred during plan generation: {e} ---")
-            return None
-    
-    return None
 
 def get_gemini_response(prompt: str):
     """Sends a prompt to the Gemini API and returns the text response."""
@@ -65,5 +51,19 @@ def get_corrected_code(user_request: str, full_plan: str, failed_step_number: in
         error_history=error_history
     )
     print("--- 🧠 Sending code to smart debugger... ---")
+    response = model.generate_content(prompt)
+    return response.text.strip().replace("```python", "").replace("```", "").strip()
+
+
+
+def get_cleaning_code(user_request: str, df_columns: list, df_head: str) -> str:
+    """Generates the specific Python code for cleaning the dataframe."""
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    prompt = CLEANER_PROMPT_TEMPLATE.format(
+        user_request=user_request,
+        df_columns=df_columns,
+        df_head=df_head
+    )
+    print("--- 🧠 Asking AI for a specific Code to clean dataframe... ---")
     response = model.generate_content(prompt)
     return response.text.strip().replace("```python", "").replace("```", "").strip()

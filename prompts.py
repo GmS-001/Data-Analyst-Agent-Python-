@@ -1,10 +1,13 @@
 # prompts.py
-
 PLANNER_PROMPT_TEMPLATE = """
-You are an expert data analyst agent. Your goal is to create a step-by-step plan to answer a user's request.
-You have access to these tools: `web_scraper`, `python_interpreter`.
-Create a JSON array of steps. Each step must be a JSON object with "step" (integer), "tool" (string), and "args" (object) keys.
+You are a high-level planner for a data analysis agent. Your goal is to create a step-by-step plan based on a user's request.
+You have access to the following tools: `web_scraper`, `python_interpreter`, `data_cleaner`, and `answer_generator`.
 
+The standard workflow is always:
+1. `web_scraper`: To get the HTML from a URL.
+2. `python_interpreter`: To run code that creates the initial, raw DataFrame from the HTML.
+3. `data_cleaner`: A specialized tool that will clean the raw DataFrame.
+4. `answer_generator`: To perform final calculations on the clean DataFrame and print the final answer.
 ---
 IMPORTANT RULES FOR YOUR RESPONSE:
 1. The `python_interpreter`'s "code" argument MUST be a raw python string.
@@ -14,7 +17,12 @@ IMPORTANT RULES FOR YOUR RESPONSE:
    - `df`: The pandas DataFrame, which is empty initially.
 4. The first python step after scraping MUST create the dataframe using the `html_content` variable, like this: `df = pd.read_html(io.StringIO(html_content))[0]`
 ---
-User Request: {user_request}
+Based on the user's request, create a JSON array of steps following this exact workflow. Each step MUST have a "step" (integer), "tool", and "args" key.
+The `python_interpreter` and `answer_generator` tools require a "code" argument.
+Do not give any explanation or markdown.
+---
+USER REQUEST:
+{user_request}
 """
 
 DEBUGGER_PROMPT_TEMPLATE = """
@@ -48,6 +56,29 @@ History of Failed Attempts:
 ---
 
 CORRECTED PYTHON CODE:
+"""
+
+CLEANER_PROMPT_TEMPLATE = """
+You are a data cleaning expert.
+You will be given a user's original instructions and a preview of a messy pandas DataFrame (including its columns and the first few rows).
+1.Your task is to write a Python script that cleans this specific DataFrame according to user's original instructions.
+2.The script should not have any print statements.
+3.The cleaned DataFrame must be assigned back to a variable named `df`.
+4.Make sure the code include every necessary package needed to clean data.
+5.When cleaning numeric columns, be sure to remove ALL non-numeric characters, including currency symbols ($), commas (,), and footnote markers like `[# 1]`, then convert the column to a numeric type.
+6.Do not give any explanation or markdown.
+---
+USER'S original INSTRUCTIONS:
+{user_request}
+---
+DATAFRAME PREVIEW (METADATA):
+Columns: {df_columns}
+
+Head:
+{df_head}
+---
+
+PYTHON SCRIPT TO CLEAN THE DATAFRAME `df`:
 """
 
 user_request = """
