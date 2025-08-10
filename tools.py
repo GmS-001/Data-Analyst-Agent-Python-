@@ -5,7 +5,6 @@ import io
 import os
 import json
 import requests
-from llm_handler import get_cleaning_code
 
 def web_scraper(url: str, data_context: dict) -> dict:
     print(f"--- 🛠️ Tool: web_scraper | URL: {url} ---")
@@ -21,16 +20,12 @@ def web_scraper(url: str, data_context: dict) -> dict:
     return data_context
 
 
-# In tools.py, replace the python_interpreter function
-
 def python_interpreter(code: str, data_context: dict) -> dict:
     print(f"--- 🛠️ Tool: Sandboxed Python Interpreter ---")
-    
     context_to_pass = {
         'df': data_context.get("df", pd.DataFrame()).to_json(orient='split'),
         'html_content': data_context.get("html_content", "")
-    }
-    
+    }  
     host_dir = os.path.abspath(os.path.dirname(__file__))
     temp_file_path_host = os.path.join(host_dir, "temp_context.json")
     
@@ -75,27 +70,6 @@ print(df.to_json(orient='split'))
             
     return data_context
 
-
-def data_cleaner(user_request: str, data_context: dict) -> dict:
-    print(f"--- 🛠️ Tool: Intelligent Data Cleaner ---")
-    df = data_context.get("df")
-    if df is None or df.empty:
-        data_context['status'] = 'error'
-        data_context['error_message'] = "DataFrame is empty, nothing to clean."
-        return data_context
-
-    # 1. Generate the metadata from the raw DataFrame
-    df_columns = df.columns.tolist()
-    df_head = df.head(10).to_string()
-
-    # 2. Call the LLM to get the specific cleaning code
-    cleaning_code = get_cleaning_code(user_request, df_columns, df_head)
-    
-    # 3. Execute the received code in the sandbox
-    # We can reuse our existing python_interpreter for this
-    print("--- Executing AI-generated cleaning script ---")
-    # We pass the cleaning_code we just generated to the interpreter
-    return python_interpreter(code=cleaning_code, data_context=data_context)
 
 
 def answer_generator(code: str, data_context: dict) -> dict:

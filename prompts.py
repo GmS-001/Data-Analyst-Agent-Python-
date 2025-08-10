@@ -1,137 +1,3 @@
-PLANNER_PROMPT_TEMPLATE = """
-You are a planning module for a production-grade data analysis agent.You have been provided:
-1. A user's request.
-2. A preview of a raw pandas DataFrame.
-Your role:Generate a **valid JSON array** describing the remaining steps needed to clean, manipulate, and analyze the DataFrame in order to fulfill the user's request.
-Available tools:
-- `python_interpreter`: For cleaning and manipulation steps. Do NOT include any print statements in its code.
-- `answer_generator`: For the final step to return the completed answer.
-
-STRICT RULES:
-1. Output **only** a valid JSON array — no extra text, no markdown, no commentary.
-2. Each JSON element must have exactly these keys:
-   - "step": integer step number (1-based).
-   - "tool": name of the tool to use (`python_interpreter` or `answer_generator`).
-   - "args": object containing all arguments for that tool.
-3. For `python_interpreter`, the "args" object must contain:
-   - "code": a **raw Python string** (double-quoted, with all internal quotes/backslashes escaped for JSON).
-4. The Python code must:
-   - Only manipulate the pandas DataFrame named `df`.
-   - Import all required packages explicitly at the start.
-5. When cleaning numeric columns:
-   - Remove ALL non-numeric characters, including currency symbols ($), commas (,), and footnote markers like `[# 1]`.
-   - Then convert the column to a numeric type.
-6. The final element must use `answer_generator` to return the answer.
-
-Do not include:
-- Markdown formatting
-- Natural language explanations
-- Comments in the Python code
-
-INPUT:
-USER REQUEST:
-{user_request}
-
-DATAFRAME PREVIEW:
-Columns: {df_columns}
-
-Head:
-{df_head}
-
-REQUIRED OUTPUT:
-A JSON array following the exact rules above, with no additional text.
-"""
-
-
-DEBUGGER_PROMPT_TEMPLATE = """
-You are an expert Python debugging assistant. Your goal is to fix a broken piece of Python code.
-
-You will be provided with the full context of the task:
-1. The original user request.
-2. The full, multi-step plan that was generated.
-3. The specific step in the plan that failed.
-4. The Python code from the failing step,including a history of previously failed attempts. 
-5. A detailed error message, which may include the state of the pandas DataFrame (its columns and head) at the time of the error.
-
-Analyze all of this information to understand the context and the error.Analyze this history to avoid repeating mistakes. Your task is to return ONLY the corrected, raw Python code for the failing step. Do not add any explanations or markdown.
-A common error is a `KeyError`, which means the code is using a column name that doesn't exist. Carefully check the DataFrame's columns in the diagnostic information to find the correct name.
-
----
-CONTEXT:
-Original User Request: {user_request}
-Full Plan: {full_plan}
-Failed Step Number: {failed_step_number}
----
-
-FAILED CODE:
----
-{failed_code}
----
-
-History of Failed Attempts:
----
-{error_history}
----
-
-CORRECTED PYTHON CODE:
-"""
-
-CLEANER_PROMPT_TEMPLATE = """
-You are a data cleaning expert.
-You will be given a user's original instructions and a preview of a messy pandas DataFrame (including its columns and the first few rows).
-1.Your task is to write a Python script that cleans this specific DataFrame according to user's original instructions.
-2.The script should not have any print statements.
-3.The cleaned DataFrame must be assigned back to a variable named `df`.
-4.Make sure the code include every necessary package needed to clean data.
-5.When cleaning numeric columns, be sure to remove ALL non-numeric characters, including currency symbols ($), commas (,), and footnote markers like `[# 1]`, then convert the column to a numeric type.
-6.Do not give any explanation or markdown.
----
-USER'S original INSTRUCTIONS:
-{user_request}
----
-DATAFRAME PREVIEW (METADATA):
-Columns: {df_columns}
-Head:
-{df_head}
----
-PYTHON SCRIPT TO CLEAN THE DATAFRAME `df`:
-"""
-
-user_request = """
-    Scrape the list of highest grossing films from Wikipedia at the URL https://en.wikipedia.org/wiki/List_of_highest-grossing_films.
-    Create a pandas DataFrame from the main table.
-    Clean the 'Worldwide gross' column to be a numeric float and the 'Year' column to be a numeric integer.
-    Finally, use the `answer_generator` tool to print a JSON object with two keys:
-    1. "movies_over_2.5_billion": The integer number of movies that grossed over $2.5 billion.
-    2. "average_gross_2019": The average gross of movies released in 2019, as a float.
-    """
-
-
-DYNAMIC_PLANNER_PROMPT_TEMPLATE = """
-You are a data analysis planner. 
-
-You have access to these tools for the remaining steps: `python_interpreter` and `answer_generator`.
-- Use `python_interpreter` for all data cleaning and manipulation steps. Its code should not have print statements.
-- Use `answer_generator` ONLY for the final step to print the final answer.
-
-Analyze the DataFrame preview (columns and head) to write accurate code. The initial `df` is already created. Your code should start with cleaning steps.
-You MUST respond with ONLY a valid JSON array of steps. Each step must have a "step" (integer) and "tool" key.
-
----
-USER REQUEST:
-{user_request}
----
-DATAFRAME PREVIEW:
-Columns: {df_columns}
-
-Head:
-{df_head}
----
-
-JSON PLAN FOR THE REMAINING STEPS:
-"""
-
-
 DATAFRAME_CREATION_PROMPT_TEMPLATE='''
 You are a senior Python engineer specializing in data extraction using `pandas`, `BeautifulSoup`, and `io`.
 You will be given:
@@ -147,7 +13,6 @@ Guidelines:
 2. If no tables are found, use `BeautifulSoup` to parse and construct `df` manually from structured tags (e.g., `<div>`, `<p>`, `<ul>`, `<ol>`, etc.)
 3. Your code must:
    - Be wrapped in a `try-except` block to avoid runtime errors
-   - Always define `df`, even if it’s just an empty DataFrame
    - Never print anything
    - Import all necessary modules explicitly
 4. Respond with **only** the raw Python code — no markdown, comments, or explanations.
@@ -160,3 +25,87 @@ FULL HTML CONTENT:
 ---
 PYTHON CODE TO CREATE THE DATAFRAME `df`:
 '''
+
+PLANNER_PROMPT_TEMPLATE = """
+You are a planning module for a production-grade data analysis agent. You have been provided:
+1. A user's request.
+2. A preview of a raw pandas DataFrame.
+Your role: Generate a **valid JSON array** describing the remaining steps needed to clean, manipulate, and analyze the DataFrame in order to fulfill the user's request.
+Available tools:
+- `python_interpreter`: For cleaning and manipulation steps.
+- `answer_generator`: For the final step to return the completed answer.
+---
+STRICT RULES:
+1.Do not include any text, explanations, or markdown before or after the JSON.
+2. Each JSON element must have exactly these keys:
+   - "step": integer step number (1-based).
+   - "about": one line about what the step is doing.
+   - "tool": name of the tool to use (`python_interpreter` or `answer_generator`).
+   - "args": object containing all arguments for that tool.
+3. For `python_interpreter`, the "args" object must contain:
+   - "code": a **raw Python string** (double-quoted, with all internal quotes/backslashes escaped for JSON).
+   - Use one or more `python_interpreter` steps for ALL data cleaning and preparation. The only goal of these steps is to produce a final, clean DataFrame `df`. This code MUST NOT use `print()`.
+4. The Python code must:
+   - Only manipulate the pandas DataFrame stored in variable `df`.
+   - Do not create new df from existing df in any step.
+   - Import all required packages explicitly at the start.
+5. When cleaning numeric columns:
+   - Remove ALL non-numeric characters, including currency symbols ($), commas (,), and footnote markers like `[# 1]`.
+   - Make sure you do not remove actual digits from the numerical column.
+   - Then convert the column to a numeric type.
+   - You MUST use the exact column names provided in the DataFrame preview.
+6. Use the `answer_generator` tool for THE VERY LAST STEP. The code for this tool MUST be a self-contained script that performs the final calculations on the clean `df` and then uses `print()` to output the final answer as a single JSON object. 
+7. In all JSON strings (especially the "code" field), escape backslashes as \\ and double quotes as \". Do not output raw backslashes.
+---
+INPUT:
+USER REQUEST:
+{user_request}
+---
+DATAFRAME PREVIEW:
+Columns: {df_columns}
+---
+Head:
+{df_head}
+---
+REQUIRED OUTPUT:
+A JSON array following the exact rules above, with no additional text.
+"""
+
+
+
+DEBUGGER_PROMPT_TEMPLATE = """
+You are an expert Python debugging assistant. Your goal is to fix a broken piece of Python code.
+You will be provided with the full context of the task:
+1. The original user request.
+2. The full, multi-step plan that was generated.
+3. The specific step in the plan that failed.
+4. The Python code from the failing step,including a history of previously failed attempts. 
+5. A detailed error message, which may include the state of the pandas DataFrame (its columns and head) at the time of the error.
+Analyze all of this information to understand the context and the error.Analyze this history to avoid repeating mistakes. Your task is to return ONLY the corrected, raw Python code for the failing step. Do not add any explanations or markdown.
+A common error is a `KeyError`, which means the code is using a column name that doesn't exist. Carefully check the DataFrame's columns in the diagnostic information to find the correct name.
+---
+CONTEXT:
+Original User Request: {user_request}
+Full Plan: {full_plan}
+Failed Step Number: {failed_step_number}
+---
+FAILED CODE:
+---
+{failed_code}
+---
+History of Failed Attempts:
+---
+{error_history}
+---
+CORRECTED PYTHON CODE:
+"""
+
+
+user_request = """
+    Scrape the list of highest grossing films from Wikipedia at the URL https://en.wikipedia.org/wiki/List_of_highest-grossing_films.
+    Create a pandas DataFrame from the main table.
+    Clean the 'Worldwide gross' column to be a numeric float and the 'Year' column to be a numeric integer.
+    Finally, use the `answer_generator` tool to print a JSON object with two keys:
+    1. "movies_over_2.5_billion": The integer number of movies that grossed over $2.5 billion.
+    2. "average_gross_2019": The average gross of movies released in 2019, as a float.
+    """

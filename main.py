@@ -3,7 +3,10 @@
 # Step 1: Import the FastAPI class
 # We are importing the main piece of functionality from the fastapi library we installed.
 from fastapi import FastAPI, UploadFile, File
-from llm_handler import get_gemini_response
+from fastapi import FastAPI, UploadFile, File, HTTPException
+import agent 
+import json
+import pandas as pd 
 
 # Step 2: Create an "instance" of the FastAPI application
 # This 'app' object is the core of our API. We'll use it to define all our API endpoints.
@@ -19,28 +22,50 @@ def read_root():
   return {"message": "Welcome! The Data Analyst Agent API is running."}
 
 
-# Define our new endpoint to handle the analysis task
-# We use @app.post since we expect data to be sent to the server.
-# The 'async' keyword makes the endpoint asynchronous. This is crucial for
-# long-running tasks like calling an LLM, as it prevents the server from
-# freezing while it waits for a response.
 @app.post("/analyse/")
-async def analyse_data(question_file: UploadFile = File(...)):
-  """
-  Accepts a question file, reads it, and returns its content.
-  This is the first step of our data analyst agent.
-  """
-  contents_bytes = await question_file.read()
-  # The file content is read as 'bytes', so we need to 'decode' it
-  # into a human-readable string using UTF-8 encoding.
-  task_description = contents_bytes.decode('utf-8')
-  
-  print(f"Sending prompt to LLM: '{task_description}'")
-  llm_response = get_gemini_response(task_description)
-  print("LLM response received.")
+async def run_analysis_agent(question_file: UploadFile = File(...)):
+    """
+    This endpoint receives a user's request via a text file,
+    runs the full data analysis agent, and returns the final result.
+    """
+    try:
+        # 1. Read the content of the uploaded file to get the user_request string.
+        user_request_bytes = await question_file.read()
+        user_request = user_request_bytes.decode('utf-8')
+        
+        # 2. This is the key step: call the main function from our agent.py script.
+        # All the complex logic we built (Seeing, Planning, Acting) happens here.
+        final_context = agent.run_agent(user_request)
+        
+        # 3. The agent returns a context dictionary. We must check what's in it
+        #    and prepare a clean, JSON-friendly response for the user.
+        if not final_context:
+            raise HTTPException(status_code=500, detail="Agent failed to produce a result.")
+        
+        response_data = {}
+        
+        # Prioritize sending the final answer if it exists.
+        if 'final_answer' in final_context:
+            # Try to format the answer as clean JSON if possible
+            try:
+                response_data['answer'] = json.loads(final_context['final_answer'])
+            except:
+                response_data['answer'] = final_context['final_answer']
 
-  return {
-      "filename": question_file.filename,
-      "task_received": task_description,
-      "llm_analysis": llm_response 
-  }
+        # If there was an error, report it clearly.
+        elif 'error_message' in final_context:
+            response_data['error'] = final_context['error_message']
+        
+        # As a fallback, include a preview of the final DataFrame if no answer was generated.
+        df = final_context.get('df')
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            response_data['dataframe_preview'] = df.head().to_dict(orient='records')
+
+        if not response_data:
+             return {"message": "Agent run completed, but no specific answer or error was generated."}
+        
+        return response_data
+            
+    except Exception as e:
+        # Catch any other unexpected errors during the process
+        raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {repr(e)}")

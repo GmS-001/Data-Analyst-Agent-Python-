@@ -5,8 +5,8 @@ import ast
 import re
 import inspect
 from prompts import user_request
-from llm_handler import create_analysis_plan, get_corrected_code, get_dataframe_creation_code,create_dynamic_plan
-from tools import web_scraper, python_interpreter, answer_generator, data_cleaner
+from llm_handler import get_corrected_code, get_dataframe_creation_code,create_dynamic_plan
+from tools import web_scraper, python_interpreter, answer_generator
 
 INITIAL_TOOLS = {
     "web_scraper": web_scraper,
@@ -16,7 +16,7 @@ FINAL_EXECUTION_TOOLS = {
     "python_interpreter": python_interpreter,
     "answer_generator": answer_generator
 }
-MAX_RETRIES = 3
+MAX_RETRIES = 10
 
 def execute_plan(user_request: str, plan: list,initial_context: dict):
     data_context = initial_context
@@ -61,11 +61,10 @@ def execute_plan(user_request: str, plan: list,initial_context: dict):
             try:
                 # Call the tool with only the arguments it can accept
                 result_context = tool_function(**current_args)
-                # If the tool doesn't return a status, assume success
                 if result_context.get('status', 'success') == 'success':
                     data_context.update(result_context)
                     break # Success, exit the retry loop
-                # If the tool returns an error status, trigger debugger
+                
                 else:
                     error_message = result_context.get('error_message', 'Tool returned a failure status.')
                     if attempt >= MAX_RETRIES - 1:
@@ -76,7 +75,7 @@ def execute_plan(user_request: str, plan: list,initial_context: dict):
                     print(f"--- 🔁 Attempt {attempt + 1} failed. Asking smart debugger for a fix... ---")
                     failed_code = current_args.get("code", "N/A")
                     error_history += f"--- ATTEMPT {attempt + 1} ---\nFAILED CODE:\n{failed_code}\n\nERROR:\n{error_message}\n---\n"
-                    current_args['code'] = get_corrected_code(user_request, plan_str, step['step'], error_history)
+                    current_args['code'] = get_corrected_code(user_request, plan_str, step['step'],failed_code, error_history)
 
             except Exception as e:
                 data_context['status'] = 'error'; data_context['error_message'] = f"Error calling tool '{tool_name}': {repr(e)}"
@@ -116,7 +115,10 @@ def run_agent(user_request: str):
     if data_context.get("status") == "error":
         print(f"--- ❌ Halting execution due to DataFrame creation error: {data_context.get('error_message')} ---")
         return
-        
+    df = data_context.get('df')
+    if df is None or df.empty:
+        print("--- ⚠️ Halting: No DataFrame could be extracted from the HTML content. ---")
+        return
     print("\n--- ✅ Raw DataFrame created successfully! ---")
     print(" Raw DataFrame Preview :")
     print(data_context['df'].head())

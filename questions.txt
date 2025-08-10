@@ -1,3 +1,6 @@
-Scrape the list of highest grossing films from Wikipedia.
-ok lets move on , i want to remind u i want to become a professional , along with making this project keep in mind that i use all professional means and methods in building this (like knowing all development issues which might come , making code modularized and such more similar things), anything u feel relevant in this project which is useful for me to if i was in professional setting tell me along the way(Although u are doing a great job!)
-https://github.com/sanand0/tools-in-data-science-public/pull/31
+Scrape the list of highest grossing films from Wikipedia at the URL https://en.wikipedia.org/wiki/List_of_highest-grossing_films.
+    Create a pandas DataFrame from the main table.
+    Clean the 'Worldwide gross' column to be a numeric float and the 'Year' column to be a numeric integer.
+    Finally, use the `answer_generator` tool to print a JSON object with two keys:
+    1. "movies_over_2.5_billion": The integer number of movies that grossed over $2.5 billion.
+    2. "average_gross_2019": The average gross of movies released in 2019, as a float.
