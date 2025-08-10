@@ -1,47 +1,33 @@
+# prompts.py
 PLANNER_PROMPT_TEMPLATE = """
-You are a planning module for a production-grade data analysis agent.You have been provided:
-1. A user's request.
-2. A preview of a raw pandas DataFrame.
-Your role:Generate a **valid JSON array** describing the remaining steps needed to clean, manipulate, and analyze the DataFrame in order to fulfill the user's request.
-Available tools:
-- `python_interpreter`: For cleaning and manipulation steps. Do NOT include any print statements in its code.
-- `answer_generator`: For the final step to return the completed answer.
+You are a high-level planner for a data analysis agent.
+You have been given a user's request and a preview of the raw pandas DataFrame.
+Your task is to create a step-by-step JSON plan for the REMAINING steps: cleaning,manipulating the data and generating the final answer according to user's request.
+You have access to these tools for the steps:
+- Use `python_interpreter` for cleaning and manipulation steps. Its code should not have print statements.
+- Use `answer_generator` ONLY for the final step to print the final answer.
 
-STRICT RULES:
-1. Output **only** a valid JSON array — no extra text, no markdown, no commentary.
-2. Each JSON element must have exactly these keys:
-   - "step": integer step number (1-based).
-   - "tool": name of the tool to use (`python_interpreter` or `answer_generator`).
-   - "args": object containing all arguments for that tool.
-3. For `python_interpreter`, the "args" object must contain:
-   - "code": a **raw Python string** (double-quoted, with all internal quotes/backslashes escaped for JSON).
-4. The Python code must:
-   - Only manipulate the pandas DataFrame named `df`.
-   - Import all required packages explicitly at the start.
-5. When cleaning numeric columns:
-   - Remove ALL non-numeric characters, including currency symbols ($), commas (,), and footnote markers like `[# 1]`.
-   - Then convert the column to a numeric type.
-6. The final element must use `answer_generator` to return the answer.
+IMPORTANT RULES FOR YOUR RESPONSE:
+1. The `python_interpreter`'s "code" argument MUST be a raw python string.
+2. The python code you write should ONLY manipulate a pandas DataFrame named `df`.
+3. Make sure the code imports all necessary packages.
+4.When cleaning numeric columns, be sure to remove ALL non-numeric characters, including currency symbols ($), commas (,), and footnote markers like `[# 1]`, then convert the column to a numeric type.
 
-Do not include:
-- Markdown formatting
-- Natural language explanations
-- Comments in the Python code
-
-INPUT:
+Based on the user's request, create a JSON array of steps following this exact workflow. Each step MUST have a "step" (integer), "tool", and "args" key.
+Do not give any explanation or markdown.
+---
 USER REQUEST:
 {user_request}
-
+---
 DATAFRAME PREVIEW:
 Columns: {df_columns}
 
 Head:
 {df_head}
+---
 
-REQUIRED OUTPUT:
-A JSON array following the exact rules above, with no additional text.
+JSON PLAN FOR THE REMAINING STEPS:
 """
-
 
 DEBUGGER_PROMPT_TEMPLATE = """
 You are an expert Python debugging assistant. Your goal is to fix a broken piece of Python code.
@@ -135,22 +121,23 @@ JSON PLAN FOR THE REMAINING STEPS:
 DATAFRAME_CREATION_PROMPT_TEMPLATE='''
 You are a senior Python engineer specializing in data extraction using `pandas`, `BeautifulSoup`, and `io`.
 You will be given:
-- A user’s original request
-- The full HTML content from the target webpage
-Your task:
-Write a single raw Python code snippet that:
-- Extracts all relevant tabular or structured data from the HTML
+You will be given a user's original instructions and the html content of the url.
+
+Your task is to write a single raw Python code snippet that:
+- Extracts the relevant data from the HTML
 - Stores the result in a pandas DataFrame assigned to the variable `df`
+
 Guidelines:
-1. First, attempt to extract all tables using `pandas.read_html(io.StringIO(html_content))`
-   - If tables exist, assign the first relevant one to `df`
-2. If no tables are found, use `BeautifulSoup` to parse and construct `df` manually from structured tags (e.g., `<div>`, `<p>`, `<ul>`, `<ol>`, etc.)
-3. Your code must:
-   - Be wrapped in a `try-except` block to avoid runtime errors
-   - Always define `df`, even if it’s just an empty DataFrame
-   - Never print anything
-   - Import all necessary modules explicitly
-4. Respond with **only** the raw Python code — no markdown, comments, or explanations.
+- First, attempt to extract all tables using `pandas.read_html(io.StringIO(html_content))`
+  - If tables exist, assign the first relevant one to `df`
+- If no tables are found, use `BeautifulSoup` to parse and construct the DataFrame manually from structured tags (like `<div>`, `<p>`, `<ul>`, etc.)
+- When cleaning numeric columns, be sure to remove ALL non-numeric characters, including currency symbols ($), commas (,), and footnote markers like `[# 1]`, then convert the column to a numeric type.
+- Your code must:
+  - Be wrapped in a `try-except` block to avoid runtime errors
+  - Always define `df`, even if it’s just an empty DataFrame
+  - Never print anything .
+
+Respond with only the raw Python code — no markdown, explanations, or text.
 ---
 USER REQUEST:
 {user_request}

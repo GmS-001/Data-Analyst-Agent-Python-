@@ -21,8 +21,10 @@ def web_scraper(url: str, data_context: dict) -> dict:
     return data_context
 
 
+# In tools.py, replace the python_interpreter function
+
 def python_interpreter(code: str, data_context: dict) -> dict:
-    print(f"--- 🛠️ Tool: Sandboxed Python Interpreter (Corrected Wrapper) ---")
+    print(f"--- 🛠️ Tool: Sandboxed Python Interpreter ---")
     
     context_to_pass = {
         'df': data_context.get("df", pd.DataFrame()).to_json(orient='split'),
@@ -34,12 +36,12 @@ def python_interpreter(code: str, data_context: dict) -> dict:
     
     with open(temp_file_path_host, 'w') as f:
         json.dump(context_to_pass, f)
-
     wrapper_code = f"""
 import pandas as pd
 import io, sys, os, json
 from bs4 import BeautifulSoup
-with open('/app/context.json', 'r') as f: context = json.load(f)
+with open('/app/context.json', 'r') as f:
+    context = json.load(f)
 df = pd.read_json(io.StringIO(context['df']), orient='split')
 html_content = context['html_content']
 {code}
@@ -99,8 +101,7 @@ def data_cleaner(user_request: str, data_context: dict) -> dict:
 def answer_generator(code: str, data_context: dict) -> dict:
     print(f"--- 🛠️ Tool: Answer Generator ---")
     context_to_pass = {
-        'df': data_context.get("df", pd.DataFrame()).to_json(orient='split'),
-        'html_content': data_context.get("html_content", "")
+        'df': data_context.get("df", pd.DataFrame()).to_json(orient='split')
     }
     host_dir = os.path.abspath(os.path.dirname(__file__))
     temp_file_path_host = os.path.join(host_dir, "temp_context.json")
@@ -115,7 +116,6 @@ from bs4 import BeautifulSoup
 with open('/app/context.json', 'r') as f:
     context = json.load(f)
 df = pd.read_json(io.StringIO(context['df']), orient='split')
-html_content = context['html_content']
 {code}
 """
     try:
